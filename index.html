@@ -1,0 +1,608 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>自動倉庫 ASRS 格納アニメーション</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: 'Segoe UI', 'Hiragino Sans', sans-serif;
+    background: #0f1923;
+    color: #e0e0e0;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 20px;
+  }
+  h1 {
+    font-size: 1.4rem;
+    margin-bottom: 8px;
+    color: #4fc3f7;
+    letter-spacing: 2px;
+  }
+  .subtitle {
+    font-size: 0.85rem;
+    color: #78909c;
+    margin-bottom: 18px;
+  }
+
+  /* Controls */
+  .controls {
+    display: flex;
+    gap: 12px;
+    margin-bottom: 16px;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+  button {
+    padding: 8px 20px;
+    border: 1px solid #4fc3f7;
+    background: transparent;
+    color: #4fc3f7;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.85rem;
+    transition: all 0.2s;
+  }
+  button:hover { background: #4fc3f733; }
+  button.active { background: #4fc3f7; color: #0f1923; font-weight: bold; }
+  select {
+    padding: 8px 12px;
+    border: 1px solid #4fc3f7;
+    background: #0f1923;
+    color: #4fc3f7;
+    border-radius: 4px;
+    font-size: 0.85rem;
+  }
+
+  /* Warehouse Layout */
+  .warehouse-container {
+    position: relative;
+    width: 820px;
+    height: 480px;
+    border: 2px solid #263238;
+    border-radius: 8px;
+    background: #1a2730;
+    overflow: hidden;
+  }
+
+  /* Rack grid */
+  .rack {
+    position: absolute;
+    display: grid;
+    gap: 2px;
+  }
+  .rack-left {
+    left: 100px; top: 30px;
+    grid-template-columns: repeat(8, 42px);
+    grid-template-rows: repeat(6, 42px);
+  }
+  .rack-right {
+    left: 500px; top: 30px;
+    grid-template-columns: repeat(8, 42px);
+    grid-template-rows: repeat(6, 42px);
+  }
+  .cell {
+    width: 42px;
+    height: 42px;
+    border: 1px solid #37474f;
+    border-radius: 3px;
+    background: #263238;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.55rem;
+    color: #546e7a;
+    transition: background 0.3s, border-color 0.3s, box-shadow 0.3s;
+    position: relative;
+  }
+  .cell.filled {
+    border-color: #4fc3f7;
+    box-shadow: 0 0 6px #4fc3f744;
+  }
+  .cell.filling {
+    animation: cellGlow 0.5s ease-out;
+  }
+  @keyframes cellGlow {
+    0% { box-shadow: 0 0 20px #4fc3f7aa; transform: scale(1.1); }
+    100% { box-shadow: 0 0 6px #4fc3f744; transform: scale(1); }
+  }
+  .cell .product-icon {
+    font-size: 1.1rem;
+  }
+
+  /* Aisle / Crane path */
+  .aisle {
+    position: absolute;
+    left: 456px; top: 30px;
+    width: 36px;
+    height: 268px;
+    background: repeating-linear-gradient(
+      0deg, #1a2730 0px, #1a2730 10px, #37474f44 10px, #37474f44 11px
+    );
+    border-left: 1px dashed #37474f;
+    border-right: 1px dashed #37474f;
+  }
+
+  /* Crane */
+  .crane {
+    position: absolute;
+    width: 32px;
+    height: 32px;
+    background: #ff9800;
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.7rem;
+    font-weight: bold;
+    color: #0f1923;
+    z-index: 10;
+    transition: left 0.6s ease-in-out, top 0.6s ease-in-out;
+    box-shadow: 0 0 12px #ff980088;
+  }
+  .crane.carrying .product-indicator {
+    display: block;
+  }
+  .product-indicator {
+    display: none;
+    position: absolute;
+    top: -8px; right: -8px;
+    width: 16px; height: 16px;
+    background: #4caf50;
+    border-radius: 50%;
+    border: 2px solid #1a2730;
+    font-size: 0.5rem;
+    line-height: 12px;
+    text-align: center;
+  }
+
+  /* Input station */
+  .input-station {
+    position: absolute;
+    left: 456px; bottom: 40px;
+    width: 36px; height: 40px;
+    background: #4caf50;
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.6rem;
+    font-weight: bold;
+    color: #fff;
+    box-shadow: 0 0 10px #4caf5066;
+  }
+
+  /* Conveyor */
+  .conveyor {
+    position: absolute;
+    bottom: 48px;
+    left: 500px;
+    width: 300px;
+    height: 24px;
+    background: repeating-linear-gradient(
+      90deg, #37474f 0px, #37474f 14px, #263238 14px, #263238 16px
+    );
+    border-radius: 3px;
+    animation: conveyorMove 1s linear infinite;
+  }
+  @keyframes conveyorMove {
+    0% { background-position: 0 0; }
+    100% { background-position: 16px 0; }
+  }
+
+  /* Labels */
+  .label {
+    position: absolute;
+    font-size: 0.65rem;
+    color: #78909c;
+    letter-spacing: 1px;
+  }
+
+  /* Info panel */
+  .info-panel {
+    position: absolute;
+    bottom: 8px;
+    left: 12px;
+    font-size: 0.7rem;
+    color: #78909c;
+    line-height: 1.6;
+  }
+  .info-panel .stat-val { color: #4fc3f7; font-weight: bold; }
+
+  /* Legend */
+  .legend {
+    display: flex;
+    gap: 18px;
+    margin-top: 14px;
+    font-size: 0.75rem;
+    color: #78909c;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+  .legend-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .legend-color {
+    width: 14px; height: 14px;
+    border-radius: 3px;
+    border: 1px solid #546e7a;
+  }
+
+  /* Product color classes */
+  .product-a { background: #e53935; }
+  .product-b { background: #1e88e5; }
+  .product-c { background: #43a047; }
+  .product-d { background: #fb8c00; }
+  .product-e { background: #8e24aa; }
+  .product-f { background: #00acc1; }
+
+  /* Speed indicator */
+  .speed-display {
+    font-size: 0.75rem;
+    color: #78909c;
+    margin-top: 6px;
+  }
+</style>
+</head>
+<body>
+
+<h1>ASRS Warehouse Storage Animation</h1>
+<p class="subtitle">自動倉庫 格納パターン シミュレーション</p>
+
+<div class="controls">
+  <label style="display:flex;align-items:center;gap:6px;color:#78909c;font-size:0.85rem;">
+    格納パターン:
+    <select id="patternSelect">
+      <option value="sequential">順序格納 (Sequential)</option>
+      <option value="random">ランダム格納 (Random)</option>
+      <option value="classABC">ABC分類格納 (Class-based)</option>
+      <option value="nearestEmpty">最近空棚格納 (Nearest Empty)</option>
+    </select>
+  </label>
+  <button id="btnStart">開始</button>
+  <button id="btnPause">一時停止</button>
+  <button id="btnReset">リセット</button>
+  <label style="display:flex;align-items:center;gap:6px;color:#78909c;font-size:0.85rem;">
+    速度:
+    <select id="speedSelect">
+      <option value="1200">遅い</option>
+      <option value="700" selected>普通</option>
+      <option value="350">速い</option>
+    </select>
+  </label>
+</div>
+
+<div class="warehouse-container" id="warehouse">
+  <!-- Labels -->
+  <div class="label" style="left:220px;top:8px;">ラック L (左棚)</div>
+  <div class="label" style="left:600px;top:8px;">ラック R (右棚)</div>
+  <div class="label" style="left:448px;top:8px;color:#ff9800;">走行路</div>
+
+  <!-- Rack Left -->
+  <div class="rack rack-left" id="rackLeft"></div>
+
+  <!-- Aisle -->
+  <div class="aisle"></div>
+
+  <!-- Rack Right -->
+  <div class="rack rack-right" id="rackRight"></div>
+
+  <!-- Crane -->
+  <div class="crane" id="crane">
+    S/R
+    <div class="product-indicator" id="productIndicator"></div>
+  </div>
+
+  <!-- Input Station -->
+  <div class="input-station">入庫</div>
+
+  <!-- Conveyor -->
+  <div class="conveyor"></div>
+  <div class="label" style="right:12px;bottom:32px;">コンベア &rarr;</div>
+
+  <!-- Info Panel -->
+  <div class="info-panel" id="infoPanel">
+    格納数: <span class="stat-val" id="statStored">0</span> / <span id="statTotal">96</span><br>
+    稼働率: <span class="stat-val" id="statUtil">0</span>%<br>
+    パターン: <span class="stat-val" id="statPattern">順序格納</span>
+  </div>
+</div>
+
+<div class="legend">
+  <div class="legend-item"><div class="legend-color product-a"></div>商品A</div>
+  <div class="legend-item"><div class="legend-color product-b"></div>商品B</div>
+  <div class="legend-item"><div class="legend-color product-c"></div>商品C</div>
+  <div class="legend-item"><div class="legend-color product-d"></div>商品D</div>
+  <div class="legend-item"><div class="legend-color product-e"></div>商品E</div>
+  <div class="legend-item"><div class="legend-color product-f"></div>商品F</div>
+  <div class="legend-item"><div class="legend-color" style="background:#ff9800;"></div>スタッカークレーン</div>
+  <div class="legend-item"><div class="legend-color" style="background:#4caf50;"></div>入庫ステーション</div>
+</div>
+
+<script>
+const ROWS = 6, COLS = 8;
+const PRODUCTS = [
+  { cls: 'product-a', icon: 'A', name: '商品A' },
+  { cls: 'product-b', icon: 'B', name: '商品B' },
+  { cls: 'product-c', icon: 'C', name: '商品C' },
+  { cls: 'product-d', icon: 'D', name: '商品D' },
+  { cls: 'product-e', icon: 'E', name: '商品E' },
+  { cls: 'product-f', icon: 'F', name: '商品F' },
+];
+
+// Rack state: 0 = left, 1 = right
+let rackCells = [[], []]; // [side][row*COLS+col]
+let rackData = [[], []];  // product info per cell
+let storedCount = 0;
+let totalCells = ROWS * COLS * 2;
+let running = false;
+let paused = false;
+let animTimer = null;
+
+const crane = document.getElementById('crane');
+const indicator = document.getElementById('productIndicator');
+const patternSelect = document.getElementById('patternSelect');
+const speedSelect = document.getElementById('speedSelect');
+
+const PATTERN_NAMES = {
+  sequential: '順序格納',
+  random: 'ランダム格納',
+  classABC: 'ABC分類格納',
+  nearestEmpty: '最近空棚格納',
+};
+
+function buildRack(containerId, side) {
+  const container = document.getElementById(containerId);
+  container.innerHTML = '';
+  rackCells[side] = [];
+  rackData[side] = [];
+  for (let r = 0; r < ROWS; r++) {
+    for (let c = 0; c < COLS; c++) {
+      const cell = document.createElement('div');
+      cell.className = 'cell';
+      cell.dataset.row = r;
+      cell.dataset.col = c;
+      cell.dataset.side = side;
+      const idx = r * COLS + c;
+      cell.textContent = `${r + 1}-${c + 1}`;
+      container.appendChild(cell);
+      rackCells[side][idx] = cell;
+      rackData[side][idx] = null;
+    }
+  }
+}
+
+function init() {
+  buildRack('rackLeft', 0);
+  buildRack('rackRight', 1);
+  storedCount = 0;
+  updateStats();
+  // Position crane at input station
+  setCranePos('input');
+}
+
+function setCranePos(target) {
+  if (target === 'input') {
+    crane.style.left = '458px';
+    crane.style.top = '330px';
+  } else {
+    // target: { side, row, col }
+    const baseLeft = target.side === 0 ? 100 : 500;
+    const x = baseLeft + target.col * 44 + 5;
+    const y = 30 + target.row * 44 + 5;
+    crane.style.left = (target.side === 0 ? 414 : 458) + 'px';
+    crane.style.top = y + 'px';
+  }
+}
+
+function updateStats() {
+  document.getElementById('statStored').textContent = storedCount;
+  document.getElementById('statTotal').textContent = totalCells;
+  document.getElementById('statUtil').textContent = Math.round(storedCount / totalCells * 100);
+  document.getElementById('statPattern').textContent = PATTERN_NAMES[patternSelect.value];
+}
+
+function getEmptyCells() {
+  const empty = [];
+  for (let s = 0; s < 2; s++) {
+    for (let r = 0; r < ROWS; r++) {
+      for (let c = 0; c < COLS; c++) {
+        const idx = r * COLS + c;
+        if (!rackData[s][idx]) {
+          empty.push({ side: s, row: r, col: c, idx });
+        }
+      }
+    }
+  }
+  return empty;
+}
+
+// Storage pattern strategies
+function getNextCell_sequential() {
+  // Fill left rack top-to-bottom, left-to-right, then right rack
+  for (let s = 0; s < 2; s++) {
+    for (let r = 0; r < ROWS; r++) {
+      for (let c = 0; c < COLS; c++) {
+        const idx = r * COLS + c;
+        if (!rackData[s][idx]) return { side: s, row: r, col: c, idx };
+      }
+    }
+  }
+  return null;
+}
+
+function getNextCell_random() {
+  const empty = getEmptyCells();
+  if (empty.length === 0) return null;
+  return empty[Math.floor(Math.random() * empty.length)];
+}
+
+function getNextCell_classABC(product) {
+  // A,B = high frequency -> bottom rows (easy access); C,D = middle; E,F = top
+  const pIdx = PRODUCTS.indexOf(product);
+  let targetRows;
+  if (pIdx <= 1) targetRows = [5, 4];       // bottom (high frequency)
+  else if (pIdx <= 3) targetRows = [3, 2];   // middle
+  else targetRows = [1, 0];                  // top (low frequency)
+
+  // Try target rows first
+  for (const r of targetRows) {
+    for (let s = 0; s < 2; s++) {
+      for (let c = 0; c < COLS; c++) {
+        const idx = r * COLS + c;
+        if (!rackData[s][idx]) return { side: s, row: r, col: c, idx };
+      }
+    }
+  }
+  // Fallback to any empty
+  return getNextCell_sequential();
+}
+
+function getNextCell_nearestEmpty() {
+  // Nearest to input station (bottom center) = closest to aisle at bottom
+  const empty = getEmptyCells();
+  if (empty.length === 0) return null;
+  // Sort by distance from input (row 5, aisle)
+  empty.sort((a, b) => {
+    const distA = (ROWS - 1 - a.row) + Math.abs(a.col);
+    const distB = (ROWS - 1 - b.row) + Math.abs(b.col);
+    return distA - distB;
+  });
+  return empty[0];
+}
+
+function getNextCell(product) {
+  const pattern = patternSelect.value;
+  switch (pattern) {
+    case 'sequential': return getNextCell_sequential();
+    case 'random': return getNextCell_random();
+    case 'classABC': return getNextCell_classABC(product);
+    case 'nearestEmpty': return getNextCell_nearestEmpty();
+    default: return getNextCell_sequential();
+  }
+}
+
+async function sleep(ms) {
+  return new Promise(resolve => {
+    animTimer = setTimeout(resolve, ms);
+  });
+}
+
+async function waitWhilePaused() {
+  while (paused && running) {
+    await new Promise(r => setTimeout(r, 100));
+  }
+}
+
+async function storeOneProduct() {
+  const product = PRODUCTS[Math.floor(Math.random() * PRODUCTS.length)];
+  const target = getNextCell(product);
+  if (!target) return false;
+
+  const speed = parseInt(speedSelect.value);
+
+  // 1. Crane at input station
+  setCranePos('input');
+  await sleep(speed * 0.5);
+  await waitWhilePaused();
+  if (!running) return false;
+
+  // 2. Pick up product
+  crane.classList.add('carrying');
+  indicator.style.background = getComputedStyle(
+    document.querySelector('.' + product.cls)
+  ).backgroundColor || '#4caf50';
+  indicator.textContent = product.icon;
+  await sleep(speed * 0.3);
+
+  // 3. Move crane to target aisle position (vertical)
+  const aisleX = target.side === 0 ? 420 : 458;
+  const targetY = 30 + target.row * 44 + 5;
+  crane.style.left = aisleX + 'px';
+  crane.style.top = targetY + 'px';
+  await sleep(speed);
+  await waitWhilePaused();
+  if (!running) return false;
+
+  // 4. Place product in cell
+  crane.classList.remove('carrying');
+  const idx = target.idx;
+  rackData[target.side][idx] = product;
+
+  const cell = rackCells[target.side][idx];
+  cell.classList.add('filled', 'filling', product.cls);
+  cell.innerHTML = `<span class="product-icon">${product.icon}</span>`;
+
+  storedCount++;
+  updateStats();
+
+  await sleep(speed * 0.3);
+  cell.classList.remove('filling');
+
+  // 5. Return crane to input
+  crane.style.left = '458px';
+  crane.style.top = '330px';
+  await sleep(speed * 0.6);
+  await waitWhilePaused();
+
+  return running;
+}
+
+async function runAnimation() {
+  running = true;
+  paused = false;
+  updateButtonStates();
+
+  while (running && storedCount < totalCells) {
+    const ok = await storeOneProduct();
+    if (!ok) break;
+  }
+
+  running = false;
+  updateButtonStates();
+}
+
+function updateButtonStates() {
+  document.getElementById('btnStart').classList.toggle('active', running && !paused);
+  document.getElementById('btnPause').classList.toggle('active', paused);
+}
+
+document.getElementById('btnStart').addEventListener('click', () => {
+  if (running && paused) {
+    paused = false;
+    updateButtonStates();
+    return;
+  }
+  if (!running) {
+    runAnimation();
+  }
+});
+
+document.getElementById('btnPause').addEventListener('click', () => {
+  if (running) {
+    paused = !paused;
+    updateButtonStates();
+  }
+});
+
+document.getElementById('btnReset').addEventListener('click', () => {
+  running = false;
+  paused = false;
+  clearTimeout(animTimer);
+  updateButtonStates();
+  init();
+});
+
+patternSelect.addEventListener('change', () => {
+  updateStats();
+});
+
+init();
+</script>
+</body>
+</html>
