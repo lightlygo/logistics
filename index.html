@@ -1,0 +1,836 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>自動倉庫 商品格納パターン</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: 'Segoe UI', 'Hiragino Sans', 'Noto Sans JP', sans-serif;
+    background: #f5f7fa;
+    color: #333;
+    min-height: 100vh;
+    padding: 20px;
+  }
+  h1 {
+    text-align: center;
+    font-size: 1.5rem;
+    color: #1a3a5c;
+    margin-bottom: 6px;
+  }
+  .subtitle {
+    text-align: center;
+    font-size: 0.9rem;
+    color: #666;
+    margin-bottom: 20px;
+  }
+
+  /* Tab controls */
+  .tabs {
+    display: flex;
+    justify-content: center;
+    gap: 8px;
+    margin-bottom: 20px;
+    flex-wrap: wrap;
+  }
+  .tab-btn {
+    padding: 10px 22px;
+    border: 2px solid #1a3a5c;
+    background: #fff;
+    color: #1a3a5c;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.85rem;
+    font-weight: bold;
+    transition: all 0.3s;
+  }
+  .tab-btn:hover { background: #e8f0fe; }
+  .tab-btn.active { background: #1a3a5c; color: #fff; }
+
+  /* Scene container */
+  .scene {
+    display: none;
+    max-width: 900px;
+    margin: 0 auto;
+    background: #fff;
+    border-radius: 12px;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+    padding: 30px;
+    position: relative;
+    min-height: 420px;
+  }
+  .scene.active { display: block; }
+  .scene-title {
+    font-size: 1.2rem;
+    font-weight: bold;
+    color: #1a3a5c;
+    margin-bottom: 4px;
+  }
+  .scene-desc {
+    font-size: 0.85rem;
+    color: #666;
+    margin-bottom: 20px;
+    line-height: 1.6;
+  }
+
+  /* Animation area */
+  .anim-area {
+    position: relative;
+    width: 100%;
+    height: 320px;
+    background: #fafcff;
+    border: 1px solid #e0e6ed;
+    border-radius: 8px;
+    overflow: hidden;
+  }
+
+  /* Common elements */
+  .elem {
+    position: absolute;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    font-size: 0.7rem;
+    color: #333;
+    z-index: 2;
+  }
+  .elem-icon {
+    width: 56px;
+    height: 56px;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.6rem;
+    margin-bottom: 4px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.12);
+  }
+  .elem-label {
+    font-size: 0.68rem;
+    font-weight: bold;
+    line-height: 1.3;
+    max-width: 80px;
+  }
+
+  /* Element styles */
+  .wms { background: linear-gradient(135deg, #e3f2fd, #bbdefb); border: 2px solid #64b5f6; }
+  .asn { background: linear-gradient(135deg, #fff3e0, #ffe0b2); border: 2px solid #ffb74d; }
+  .person { background: linear-gradient(135deg, #e8f5e9, #c8e6c9); border: 2px solid #66bb6a; }
+  .handy { background: linear-gradient(135deg, #f3e5f5, #e1bee7); border: 2px solid #ab47bc; }
+  .product { background: linear-gradient(135deg, #fce4ec, #f8bbd0); border: 2px solid #ec407a; }
+  .warehouse { background: linear-gradient(135deg, #eceff1, #cfd8dc); border: 2px solid #78909c; }
+  .station { background: linear-gradient(135deg, #e0f7fa, #b2ebf2); border: 2px solid #26c6da; }
+  .rapyuta { background: linear-gradient(135deg, #e8eaf6, #c5cae9); border: 2px solid #5c6bc0; }
+  .manager { background: linear-gradient(135deg, #fff8e1, #ffecb3); border: 2px solid #ffa726; }
+  .data-icon { background: linear-gradient(135deg, #e0f2f1, #b2dfdb); border: 2px solid #26a69a; }
+
+  /* Animated arrows using SVG */
+  .arrow-svg {
+    position: absolute;
+    top: 0; left: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    z-index: 1;
+  }
+  .arrow-path {
+    fill: none;
+    stroke: #43a047;
+    stroke-width: 3;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    filter: drop-shadow(0 1px 2px rgba(0,0,0,0.15));
+  }
+  .arrow-head {
+    fill: #43a047;
+  }
+
+  /* Moving dot along arrow path */
+  .moving-dot {
+    fill: #43a047;
+    filter: drop-shadow(0 0 4px rgba(67,160,71,0.6));
+  }
+
+  /* Step labels */
+  .step-label {
+    position: absolute;
+    background: #43a047;
+    color: #fff;
+    font-size: 0.6rem;
+    font-weight: bold;
+    padding: 2px 8px;
+    border-radius: 10px;
+    z-index: 5;
+    white-space: nowrap;
+  }
+
+  /* Pulse animation on elements */
+  @keyframes pulse {
+    0%, 100% { transform: scale(1); }
+    50% { transform: scale(1.08); }
+  }
+  .pulse {
+    animation: pulse 2s ease-in-out infinite;
+  }
+
+  /* Glow highlight */
+  @keyframes glowHighlight {
+    0%, 100% { box-shadow: 0 2px 8px rgba(0,0,0,0.12); }
+    50% { box-shadow: 0 0 20px rgba(67,160,71,0.5); }
+  }
+  .glow {
+    animation: glowHighlight 2s ease-in-out infinite;
+  }
+
+  /* Product moving animation */
+  @keyframes moveProduct {
+    0% { offset-distance: 0%; opacity: 1; }
+    100% { offset-distance: 100%; opacity: 1; }
+  }
+
+  /* Floating box for scene 4 */
+  @keyframes floatBox {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-6px); }
+  }
+
+  .replay-btn {
+    display: block;
+    margin: 16px auto 0;
+    padding: 8px 24px;
+    background: #43a047;
+    color: #fff;
+    border: none;
+    border-radius: 6px;
+    font-size: 0.85rem;
+    cursor: pointer;
+    transition: background 0.2s;
+  }
+  .replay-btn:hover { background: #2e7d32; }
+
+  .flow-note {
+    margin-top: 12px;
+    padding: 12px 16px;
+    background: #f0f7f0;
+    border-left: 4px solid #43a047;
+    border-radius: 4px;
+    font-size: 0.78rem;
+    color: #555;
+    line-height: 1.7;
+  }
+</style>
+</head>
+<body>
+
+<h1>自動倉庫 商品格納パターン</h1>
+<p class="subtitle">Bin格納における4つの運用パターン</p>
+
+<div class="tabs">
+  <button class="tab-btn active" onclick="showScene(0)">① 入荷検品</button>
+  <button class="tab-btn" onclick="showScene(1)">② 在庫登録</button>
+  <button class="tab-btn" onclick="showScene(2)">③ 外部データ連携</button>
+  <button class="tab-btn" onclick="showScene(3)">④ ステーション格納</button>
+</div>
+
+<!-- ==================== SCENE 1: 入荷検品 ==================== -->
+<div class="scene active" id="scene0">
+  <div class="scene-title">① 入荷検品</div>
+  <div class="scene-desc">ASN（在庫移動指示データ）と商品を照合してBin積み付け → 格納</div>
+  <div class="anim-area" id="area0">
+    <svg class="arrow-svg" id="svg0"></svg>
+
+    <!-- 上位WMS -->
+    <div class="elem" style="left:20px; top:20px;">
+      <div class="elem-icon wms">🗄️</div>
+      <div class="elem-label">上位WMS</div>
+    </div>
+
+    <!-- ASN -->
+    <div class="elem" style="left:20px; top:160px;">
+      <div class="elem-icon asn" id="s0-asn">📋</div>
+      <div class="elem-label">ASN<br><span style="color:#e65100;font-size:0.6rem;">(在庫移動指示)</span></div>
+    </div>
+
+    <!-- 作業者（検品） -->
+    <div class="elem" style="left:200px; top:130px;">
+      <div class="elem-icon person" id="s0-person">👷</div>
+      <div class="elem-label">作業者<br>商品検品・Bin積付</div>
+    </div>
+
+    <!-- 商品 -->
+    <div class="elem" style="left:200px; top:240px;">
+      <div class="elem-icon product" id="s0-product">📦</div>
+      <div class="elem-label">入荷商品</div>
+    </div>
+
+    <!-- ハンディターミナル -->
+    <div class="elem" style="left:370px; top:130px;">
+      <div class="elem-icon handy" id="s0-handy">📱</div>
+      <div class="elem-label">ハンディ<br>スキャン</div>
+    </div>
+
+    <!-- 管理者 -->
+    <div class="elem" style="left:370px; top:20px;">
+      <div class="elem-icon manager" id="s0-manager">👨‍💼</div>
+      <div class="elem-label">管理者<br>検品結果確認<br>ASN確定</div>
+    </div>
+
+    <!-- Rapyuta WMS -->
+    <div class="elem" style="left:540px; top:20px;">
+      <div class="elem-icon rapyuta" id="s0-rapyuta">☁️</div>
+      <div class="elem-label">Rapyuta WMS</div>
+    </div>
+
+    <!-- 積付情報 -->
+    <div class="elem" style="left:690px; top:20px;">
+      <div class="elem-icon data-icon" id="s0-tsumitsuke">📝</div>
+      <div class="elem-label">積付情報</div>
+    </div>
+
+    <!-- 自動倉庫 -->
+    <div class="elem" style="left:690px; top:150px;">
+      <div class="elem-icon warehouse" id="s0-warehouse">🏭</div>
+      <div class="elem-label">自動倉庫<br>Bin格納</div>
+    </div>
+  </div>
+
+  <div class="flow-note">
+    <b>フロー：</b>上位WMSからASNを受信 → 作業者が商品をスキャン・照合 → Binに積み付け → 管理者がASN確定 → Rapyuta WMSへ積付情報送信 → 自動倉庫へBin格納
+  </div>
+  <button class="replay-btn" onclick="replayScene(0)">▶ アニメーション再生</button>
+</div>
+
+<!-- ==================== SCENE 2: 在庫登録 ==================== -->
+<div class="scene" id="scene1">
+  <div class="scene-title">② 在庫登録</div>
+  <div class="scene-desc">ASNなしでBin積み付け → 格納</div>
+  <div class="anim-area" id="area1">
+    <svg class="arrow-svg" id="svg1"></svg>
+
+    <!-- 作業者 -->
+    <div class="elem" style="left:60px; top:120px;">
+      <div class="elem-icon person" id="s1-person">👷</div>
+      <div class="elem-label">作業者<br>Bin積付</div>
+    </div>
+
+    <!-- 商品 -->
+    <div class="elem" style="left:60px; top:230px;">
+      <div class="elem-icon product" id="s1-product">📦</div>
+      <div class="elem-label">商品</div>
+    </div>
+
+    <!-- ハンディターミナル -->
+    <div class="elem" style="left:250px; top:120px;">
+      <div class="elem-icon handy" id="s1-handy">📱</div>
+      <div class="elem-label">ハンディ<br>スキャン登録</div>
+    </div>
+
+    <!-- Rapyuta WMS -->
+    <div class="elem" style="left:440px; top:30px;">
+      <div class="elem-icon rapyuta" id="s1-rapyuta">☁️</div>
+      <div class="elem-label">Rapyuta WMS</div>
+    </div>
+
+    <!-- 積付情報 -->
+    <div class="elem" style="left:620px; top:30px;">
+      <div class="elem-icon data-icon" id="s1-tsumitsuke">📝</div>
+      <div class="elem-label">積付情報</div>
+    </div>
+
+    <!-- 自動倉庫 -->
+    <div class="elem" style="left:620px; top:160px;">
+      <div class="elem-icon warehouse" id="s1-warehouse">🏭</div>
+      <div class="elem-label">自動倉庫<br>Bin格納</div>
+    </div>
+  </div>
+
+  <div class="flow-note">
+    <b>フロー：</b>作業者が商品をスキャンしてBinに積み付け（ASN不要） → Rapyuta WMSに在庫登録 → 積付情報を送信 → 自動倉庫へBin格納
+  </div>
+  <button class="replay-btn" onclick="replayScene(1)">▶ アニメーション再生</button>
+</div>
+
+<!-- ==================== SCENE 3: 外部データ連携 ==================== -->
+<div class="scene" id="scene2">
+  <div class="scene-title">③ 外部データ連携による在庫登録（外部連携）</div>
+  <div class="scene-desc">上位WMSでBin積み付け → 格納（別途データ連携）</div>
+  <div class="anim-area" id="area2">
+    <svg class="arrow-svg" id="svg2"></svg>
+
+    <!-- 上位WMS -->
+    <div class="elem" style="left:60px; top:30px;">
+      <div class="elem-icon wms" id="s2-wms">🗄️</div>
+      <div class="elem-label">上位WMS</div>
+    </div>
+
+    <!-- 作業者 -->
+    <div class="elem" style="left:60px; top:170px;">
+      <div class="elem-icon person" id="s2-person">👷</div>
+      <div class="elem-label">作業者<br>Bin積付</div>
+    </div>
+
+    <!-- ハンディターミナル -->
+    <div class="elem" style="left:250px; top:170px;">
+      <div class="elem-icon handy" id="s2-handy">📱</div>
+      <div class="elem-label">ハンディ<br>スキャン</div>
+    </div>
+
+    <!-- データ連携 -->
+    <div class="elem" style="left:250px; top:30px;">
+      <div class="elem-icon data-icon" id="s2-data">🔗</div>
+      <div class="elem-label">データ連携<br>(別途)</div>
+    </div>
+
+    <!-- Rapyuta WMS -->
+    <div class="elem" style="left:440px; top:30px;">
+      <div class="elem-icon rapyuta" id="s2-rapyuta">☁️</div>
+      <div class="elem-label">Rapyuta WMS</div>
+    </div>
+
+    <!-- 積付情報 -->
+    <div class="elem" style="left:620px; top:30px;">
+      <div class="elem-icon data-icon" id="s2-tsumitsuke">📝</div>
+      <div class="elem-label">積付情報</div>
+    </div>
+
+    <!-- 自動倉庫 -->
+    <div class="elem" style="left:620px; top:170px;">
+      <div class="elem-icon warehouse" id="s2-warehouse">🏭</div>
+      <div class="elem-label">自動倉庫<br>Bin格納</div>
+    </div>
+  </div>
+
+  <div class="flow-note">
+    <b>フロー：</b>上位WMSから別途データ連携 → 作業者がBin積み付け → Rapyuta WMSに積付情報を送信 → 自動倉庫へBin格納
+  </div>
+  <button class="replay-btn" onclick="replayScene(2)">▶ アニメーション再生</button>
+</div>
+
+<!-- ==================== SCENE 4: ステーション格納 ==================== -->
+<div class="scene" id="scene3">
+  <div class="scene-title">④ ステーションでの商品格納</div>
+  <div class="scene-desc">供給された空スロットに商品を直接積み付け登録していく</div>
+  <div class="anim-area" id="area3">
+    <svg class="arrow-svg" id="svg3"></svg>
+
+    <!-- 自動倉庫（供給元） -->
+    <div class="elem" style="left:60px; top:30px;">
+      <div class="elem-icon warehouse" id="s3-warehouse-src">🏭</div>
+      <div class="elem-label">自動倉庫<br>空Bin供給</div>
+    </div>
+
+    <!-- ステーション -->
+    <div class="elem" style="left:300px; top:100px;">
+      <div class="elem-icon station" id="s3-station">🔲</div>
+      <div class="elem-label">ステーション<br>(空スロット)</div>
+    </div>
+
+    <!-- 作業者 -->
+    <div class="elem" style="left:300px; top:230px;">
+      <div class="elem-icon person" id="s3-person">👷</div>
+      <div class="elem-label">作業者<br>商品積付・登録</div>
+    </div>
+
+    <!-- 商品 -->
+    <div class="elem" style="left:490px; top:230px;">
+      <div class="elem-icon product" id="s3-product">📦</div>
+      <div class="elem-label">商品</div>
+    </div>
+
+    <!-- ハンディ -->
+    <div class="elem" style="left:490px; top:100px;">
+      <div class="elem-icon handy" id="s3-handy">📱</div>
+      <div class="elem-label">ハンディ<br>登録</div>
+    </div>
+
+    <!-- Rapyuta WMS -->
+    <div class="elem" style="left:680px; top:30px;">
+      <div class="elem-icon rapyuta" id="s3-rapyuta">☁️</div>
+      <div class="elem-label">Rapyuta WMS</div>
+    </div>
+
+    <!-- 自動倉庫（格納先） -->
+    <div class="elem" style="left:680px; top:180px;">
+      <div class="elem-icon warehouse" id="s3-warehouse-dst">🏭</div>
+      <div class="elem-label">自動倉庫<br>Bin格納</div>
+    </div>
+  </div>
+
+  <div class="flow-note">
+    <b>フロー：</b>自動倉庫から空Binをステーションへ供給 → 作業者が商品を空スロットに直接積み付け・スキャン登録 → Rapyuta WMSへ登録 → 自動倉庫へBin格納
+  </div>
+  <button class="replay-btn" onclick="replayScene(3)">▶ アニメーション再生</button>
+</div>
+
+<script>
+// ========== Tab switching ==========
+let currentScene = 0;
+const scenes = document.querySelectorAll('.scene');
+const tabBtns = document.querySelectorAll('.tab-btn');
+
+function showScene(idx) {
+  scenes.forEach((s, i) => {
+    s.classList.toggle('active', i === idx);
+    tabBtns[i].classList.toggle('active', i === idx);
+  });
+  currentScene = idx;
+  cancelAllAnimations();
+  startSceneAnimation(idx);
+}
+
+// ========== SVG Arrow Drawing ==========
+function drawArrow(svgId, x1, y1, x2, y2, color = '#43a047', dash = false) {
+  const svg = document.getElementById(svgId);
+  const ns = 'http://www.w3.org/2000/svg';
+
+  // Calculate direction for arrowhead
+  const dx = x2 - x1;
+  const dy = y2 - y1;
+  const len = Math.sqrt(dx * dx + dy * dy);
+  const ux = dx / len;
+  const uy = dy / len;
+
+  // Shorten line to make room for arrowhead
+  const headLen = 12;
+  const ex = x2 - ux * headLen;
+  const ey = y2 - uy * headLen;
+
+  // Line
+  const line = document.createElementNS(ns, 'line');
+  line.setAttribute('x1', x1);
+  line.setAttribute('y1', y1);
+  line.setAttribute('x2', ex);
+  line.setAttribute('y2', ey);
+  line.setAttribute('stroke', color);
+  line.setAttribute('stroke-width', '3');
+  line.setAttribute('stroke-linecap', 'round');
+  if (dash) line.setAttribute('stroke-dasharray', '8,4');
+
+  // Animate the line drawing
+  const totalLen = Math.sqrt((ex - x1) ** 2 + (ey - y1) ** 2);
+  line.setAttribute('stroke-dasharray', totalLen);
+  line.setAttribute('stroke-dashoffset', totalLen);
+  line.style.transition = 'none';
+
+  svg.appendChild(line);
+
+  // Arrowhead
+  const angle = Math.atan2(dy, dx);
+  const a1 = angle + Math.PI * 0.8;
+  const a2 = angle - Math.PI * 0.8;
+  const points = `${x2},${y2} ${x2 + headLen * Math.cos(a1)},${y2 + headLen * Math.sin(a1)} ${x2 + headLen * Math.cos(a2)},${y2 + headLen * Math.sin(a2)}`;
+
+  const head = document.createElementNS(ns, 'polygon');
+  head.setAttribute('points', points);
+  head.setAttribute('fill', color);
+  head.style.opacity = '0';
+  head.style.transition = 'opacity 0.3s';
+
+  svg.appendChild(head);
+
+  return { line, head, totalLen };
+}
+
+function drawCurvedArrow(svgId, x1, y1, cx, cy, x2, y2, color = '#43a047') {
+  const svg = document.getElementById(svgId);
+  const ns = 'http://www.w3.org/2000/svg';
+
+  const d = `M${x1},${y1} Q${cx},${cy} ${x2},${y2}`;
+
+  const path = document.createElementNS(ns, 'path');
+  path.setAttribute('d', d);
+  path.setAttribute('fill', 'none');
+  path.setAttribute('stroke', color);
+  path.setAttribute('stroke-width', '3');
+  path.setAttribute('stroke-linecap', 'round');
+
+  svg.appendChild(path);
+  const totalLen = path.getTotalLength();
+  path.setAttribute('stroke-dasharray', totalLen);
+  path.setAttribute('stroke-dashoffset', totalLen);
+
+  // Arrowhead
+  const t = 0.98;
+  const t1 = 1 - t;
+  const px = t1 * t1 * x1 + 2 * t1 * t * cx + t * t * x2;
+  const py = t1 * t1 * y1 + 2 * t1 * t * cy + t * t * y2;
+  const angle = Math.atan2(y2 - py, x2 - px);
+  const headLen = 12;
+  const a1 = angle + Math.PI * 0.8;
+  const a2 = angle - Math.PI * 0.8;
+  const points = `${x2},${y2} ${x2 + headLen * Math.cos(a1)},${y2 + headLen * Math.sin(a1)} ${x2 + headLen * Math.cos(a2)},${y2 + headLen * Math.sin(a2)}`;
+
+  const head = document.createElementNS(ns, 'polygon');
+  head.setAttribute('points', points);
+  head.setAttribute('fill', color);
+  head.style.opacity = '0';
+
+  svg.appendChild(head);
+
+  // Moving dot
+  const dot = document.createElementNS(ns, 'circle');
+  dot.setAttribute('r', '6');
+  dot.setAttribute('fill', color);
+  dot.setAttribute('filter', 'drop-shadow(0 0 4px ' + color + ')');
+  dot.style.opacity = '0';
+
+  svg.appendChild(dot);
+
+  return { path, head, dot, totalLen, d };
+}
+
+// ========== Animation Controller ==========
+let animTimers = [];
+
+function cancelAllAnimations() {
+  animTimers.forEach(t => clearTimeout(t));
+  animTimers = [];
+  for (let i = 0; i < 4; i++) {
+    const svg = document.getElementById('svg' + i);
+    if (svg) svg.innerHTML = '';
+  }
+  // Remove all glow/pulse classes
+  document.querySelectorAll('.glow, .pulse').forEach(el => {
+    el.classList.remove('glow', 'pulse');
+  });
+}
+
+function delay(ms) {
+  return new Promise(resolve => {
+    const t = setTimeout(resolve, ms);
+    animTimers.push(t);
+  });
+}
+
+async function animateArrow(arrowData, duration = 600) {
+  const { line, path, head, totalLen } = arrowData;
+  const target = line || path;
+  target.style.transition = `stroke-dashoffset ${duration}ms ease-in-out`;
+  // force reflow
+  target.getBoundingClientRect();
+  target.setAttribute('stroke-dashoffset', '0');
+  await delay(duration);
+  head.style.opacity = '1';
+}
+
+async function animateArrowWithDot(arrowData, duration = 800) {
+  await animateArrow(arrowData, duration);
+  const { dot, path, d } = arrowData;
+  if (dot && path) {
+    dot.style.opacity = '1';
+    // Animate dot along path
+    const animNs = 'http://www.w3.org/2000/svg';
+    const animMotion = document.createElementNS(animNs, 'animateMotion');
+    animMotion.setAttribute('dur', (duration * 0.8) + 'ms');
+    animMotion.setAttribute('repeatCount', 'indefinite');
+    animMotion.setAttribute('path', d);
+    dot.appendChild(animMotion);
+  }
+}
+
+function highlightElem(id) {
+  const el = document.getElementById(id);
+  if (el) {
+    el.classList.add('glow');
+    return el;
+  }
+}
+
+function pulseElem(id) {
+  const el = document.getElementById(id);
+  if (el) {
+    el.classList.add('pulse');
+    return el;
+  }
+}
+
+// ========== Scene Animations ==========
+async function animateScene0() {
+  const svgId = 'svg0';
+
+  // Step 1: WMS → ASN
+  highlightElem('s0-asn');
+  const a1 = drawCurvedArrow(svgId, 48, 82, 48, 130, 48, 162, '#1565c0');
+  await animateArrowWithDot(a1, 500);
+  await delay(300);
+
+  // Step 2: ASN → 作業者
+  pulseElem('s0-person');
+  const a2 = drawCurvedArrow(svgId, 78, 195, 140, 175, 220, 165, '#e65100');
+  await animateArrowWithDot(a2, 600);
+  await delay(200);
+
+  // Step 3: 商品 → 作業者
+  const a3 = drawCurvedArrow(svgId, 230, 245, 225, 210, 230, 180, '#e91e63');
+  await animateArrowWithDot(a3, 400);
+  await delay(300);
+
+  // Step 4: 作業者 → ハンディ
+  highlightElem('s0-handy');
+  const a4 = drawCurvedArrow(svgId, 268, 160, 320, 155, 388, 158, '#7b1fa2');
+  await animateArrowWithDot(a4, 500);
+  await delay(200);
+
+  // Step 5: ハンディ → 管理者
+  highlightElem('s0-manager');
+  const a5 = drawCurvedArrow(svgId, 398, 135, 398, 100, 398, 78, '#f57f17');
+  await animateArrowWithDot(a5, 400);
+  await delay(300);
+
+  // Step 6: 管理者 → Rapyuta WMS
+  highlightElem('s0-rapyuta');
+  const a6 = drawCurvedArrow(svgId, 432, 50, 488, 48, 556, 50, '#283593');
+  await animateArrowWithDot(a6, 500);
+  await delay(200);
+
+  // Step 7: Rapyuta WMS → 積付情報
+  highlightElem('s0-tsumitsuke');
+  const a7 = drawCurvedArrow(svgId, 600, 50, 645, 48, 706, 50, '#00695c');
+  await animateArrowWithDot(a7, 400);
+  await delay(200);
+
+  // Step 8: 積付情報 → 自動倉庫
+  highlightElem('s0-warehouse');
+  pulseElem('s0-warehouse');
+  const a8 = drawCurvedArrow(svgId, 718, 82, 718, 120, 718, 155, '#43a047');
+  await animateArrowWithDot(a8, 600);
+}
+
+async function animateScene1() {
+  const svgId = 'svg1';
+
+  // Step 1: 商品 → 作業者
+  highlightElem('s1-person');
+  const a1 = drawCurvedArrow(svgId, 90, 235, 88, 200, 88, 182, '#e91e63');
+  await animateArrowWithDot(a1, 400);
+  await delay(300);
+
+  // Step 2: 作業者 → ハンディ
+  highlightElem('s1-handy');
+  const a2 = drawCurvedArrow(svgId, 128, 150, 188, 148, 266, 150, '#7b1fa2');
+  await animateArrowWithDot(a2, 600);
+  await delay(300);
+
+  // Step 3: ハンディ → Rapyuta WMS
+  highlightElem('s1-rapyuta');
+  const a3 = drawCurvedArrow(svgId, 290, 125, 360, 80, 458, 62, '#283593');
+  await animateArrowWithDot(a3, 600);
+  await delay(300);
+
+  // Step 4: Rapyuta WMS → 積付情報
+  highlightElem('s1-tsumitsuke');
+  const a4 = drawCurvedArrow(svgId, 508, 58, 565, 55, 636, 58, '#00695c');
+  await animateArrowWithDot(a4, 500);
+  await delay(200);
+
+  // Step 5: 積付情報 → 自動倉庫
+  highlightElem('s1-warehouse');
+  pulseElem('s1-warehouse');
+  const a5 = drawCurvedArrow(svgId, 650, 88, 650, 125, 650, 165, '#43a047');
+  await animateArrowWithDot(a5, 600);
+}
+
+async function animateScene2() {
+  const svgId = 'svg2';
+
+  // Step 1: 上位WMS → データ連携
+  highlightElem('s2-data');
+  const a1 = drawCurvedArrow(svgId, 128, 58, 190, 55, 266, 58, '#1565c0');
+  await animateArrowWithDot(a1, 500);
+  await delay(200);
+
+  // Step 2: 上位WMS → 作業者（指示）
+  highlightElem('s2-person');
+  const a2 = drawCurvedArrow(svgId, 88, 90, 86, 135, 88, 175, '#1565c0');
+  await animateArrowWithDot(a2, 500);
+  await delay(300);
+
+  // Step 3: 作業者 → ハンディ
+  highlightElem('s2-handy');
+  const a3 = drawCurvedArrow(svgId, 128, 200, 190, 198, 268, 200, '#7b1fa2');
+  await animateArrowWithDot(a3, 500);
+  await delay(200);
+
+  // Step 4: データ連携 → Rapyuta WMS
+  highlightElem('s2-rapyuta');
+  const a4 = drawCurvedArrow(svgId, 318, 58, 382, 55, 458, 58, '#00695c');
+  await animateArrowWithDot(a4, 600);
+  await delay(200);
+
+  // Step 5: ハンディ → Rapyuta WMS (スキャン情報)
+  const a5 = drawCurvedArrow(svgId, 290, 175, 380, 120, 465, 88, '#7b1fa2');
+  await animateArrowWithDot(a5, 500);
+  await delay(200);
+
+  // Step 6: Rapyuta WMS → 積付情報
+  highlightElem('s2-tsumitsuke');
+  const a6 = drawCurvedArrow(svgId, 508, 58, 566, 55, 636, 58, '#00695c');
+  await animateArrowWithDot(a6, 400);
+  await delay(200);
+
+  // Step 7: 積付情報 → 自動倉庫
+  highlightElem('s2-warehouse');
+  pulseElem('s2-warehouse');
+  const a7 = drawCurvedArrow(svgId, 650, 88, 650, 130, 650, 178, '#43a047');
+  await animateArrowWithDot(a7, 600);
+}
+
+async function animateScene3() {
+  const svgId = 'svg3';
+
+  // Step 1: 自動倉庫 → ステーション（空Bin供給）
+  highlightElem('s3-station');
+  const a1 = drawCurvedArrow(svgId, 108, 82, 200, 110, 316, 128, '#546e7a');
+  await animateArrowWithDot(a1, 700);
+  await delay(300);
+
+  // Step 2: 商品 → 作業者
+  highlightElem('s3-person');
+  const a2 = drawCurvedArrow(svgId, 506, 265, 430, 268, 365, 262, '#e91e63');
+  await animateArrowWithDot(a2, 500);
+  await delay(200);
+
+  // Step 3: 作業者 → ステーション（積付）
+  pulseElem('s3-station');
+  const a3 = drawCurvedArrow(svgId, 330, 235, 328, 200, 328, 168, '#43a047');
+  await animateArrowWithDot(a3, 500);
+  await delay(300);
+
+  // Step 4: 作業者 → ハンディ（登録）
+  highlightElem('s3-handy');
+  const a4 = drawCurvedArrow(svgId, 365, 252, 430, 180, 510, 140, '#7b1fa2');
+  await animateArrowWithDot(a4, 500);
+  await delay(200);
+
+  // Step 5: ハンディ → Rapyuta WMS
+  highlightElem('s3-rapyuta');
+  const a5 = drawCurvedArrow(svgId, 540, 110, 610, 80, 698, 82, '#283593');
+  await animateArrowWithDot(a5, 500);
+  await delay(200);
+
+  // Step 6: ステーション → 自動倉庫（格納）
+  highlightElem('s3-warehouse-dst');
+  pulseElem('s3-warehouse-dst');
+  const a6 = drawCurvedArrow(svgId, 370, 128, 520, 160, 696, 190, '#43a047');
+  await animateArrowWithDot(a6, 800);
+}
+
+const sceneAnimators = [animateScene0, animateScene1, animateScene2, animateScene3];
+
+function startSceneAnimation(idx) {
+  cancelAllAnimations();
+  setTimeout(() => sceneAnimators[idx](), 300);
+}
+
+function replayScene(idx) {
+  startSceneAnimation(idx);
+}
+
+// Initial animation
+setTimeout(() => startSceneAnimation(0), 500);
+</script>
+</body>
+</html>
